@@ -1,0 +1,3 @@
+# Konsistente Zeilenenden: LF in Repo, CRLF auf Windows automatisch
+* text=auto eol=lf
+*.bat text eol=crlf
