@@ -137,7 +137,6 @@ function summarizeQuotePayload(provider, items) {
 }
 
 const V7_BATCH_SIZE = 50;
-const CHART_FALLBACK_LIMIT = 40;
 
 async function getYahooQuotes(symbols) {
   // Split into parallel v7 batches of 50 — covers all symbols with ~4 requests
@@ -151,8 +150,8 @@ async function getYahooQuotes(symbols) {
   const covered = new Set(v7Items.map((item) => item.symbol));
   const missing = symbols.filter((s) => !covered.has(s));
   if (missing.length === 0) return v7Items;
-  // Chart fallback only for symbols v7 missed — DEFAULT_SYMBOLS first
-  const prioritized = [...new Set([...DEFAULT_SYMBOLS.filter((s) => missing.includes(s)), ...missing])].slice(0, CHART_FALLBACK_LIMIT);
+  // Chart fallback for all symbols v7 missed — DEFAULT_SYMBOLS first for priority
+  const prioritized = [...new Set([...DEFAULT_SYMBOLS.filter((s) => missing.includes(s)), ...missing])];
   const fallback = await getYahooChartQuotes(prioritized);
   return [...v7Items, ...fallback];
 }

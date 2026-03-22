@@ -344,7 +344,10 @@ async function loadGlobalNews() {
 
 async function refreshQuotes() {
   if (!state.universe.length) return;
-  const symbols = state.universe.map((item) => item.symbol).join(",");
+  // Only fetch quotes for the currently active filter + selected symbol
+  // This keeps the request small enough for the chart fallback to cover all symbols
+  const filterSymbols = getUniverseByScope(state.activeUniverseFilter).map((item) => item.symbol);
+  const symbols = [...new Set([state.selectedSymbol, ...filterSymbols])].join(",");
   let payload = { items: [] };
   try {
     const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols)}`);
@@ -449,6 +452,7 @@ function renderScopeTabs() {
       renderSummaryCards();
       renderBreadthCards();
       renderScreener();
+      refreshQuotes();
     });
   });
 }
