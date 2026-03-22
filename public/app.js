@@ -345,12 +345,19 @@ async function loadGlobalNews() {
 async function refreshQuotes() {
   if (!state.universe.length) return;
   const symbols = state.universe.map((item) => item.symbol).join(",");
-  const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols)}`);
-  const payload = await response.json();
-  state.provider = payload.sourceSummary || payload.provider || "Unknown";
+  let payload = { items: [] };
+  try {
+    const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols)}`);
+    payload = await response.json();
+  } catch {
+    // Netzwerkfehler – vorhandene Kursdaten behalten
+  }
+  if (payload.items?.length) {
+    state.quotes = new Map(payload.items.map((item) => [item.symbol, item]));
+  }
+  state.provider = payload.sourceSummary || payload.provider || (state.quotes.size ? state.provider : "Fehler");
   elements.providerName.textContent = state.provider;
   elements.updatedAt.textContent = new Date().toLocaleTimeString("de-DE");
-  state.quotes = new Map((payload.items || []).map((item) => [item.symbol, item]));
   renderWatchlist();
   renderSelectionHeader();
   renderHeatmap();

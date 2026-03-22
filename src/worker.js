@@ -136,61 +136,70 @@ function summarizeQuotePayload(provider, items) {
   return { provider, sourceSummary: sourceSet.join(" + ") || provider, items };
 }
 
+const CHART_FALLBACK_LIMIT = 30;
+
 async function getYahooQuotes(symbols) {
   const endpoint = new URL("https://query1.finance.yahoo.com/v7/finance/quote");
   endpoint.searchParams.set("symbols", symbols.join(","));
+  let v7Items = [];
   try {
     const response = await fetch(endpoint, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!response.ok) {
-      throw new Error(`Yahoo quote endpoint returned ${response.status}`);
-    }
-    const payload = await response.json();
-    const items = (payload.quoteResponse?.result || []).map((item) => normalizeQuote({
-      symbol: item.symbol,
-      price: item.regularMarketPrice,
-      change: item.regularMarketChange,
-      changePercent: item.regularMarketChangePercent,
-      open: item.regularMarketOpen,
-      high: item.regularMarketDayHigh,
-      low: item.regularMarketDayLow,
-      previousClose: item.regularMarketPreviousClose,
-      volume: item.regularMarketVolume,
-      marketCap: item.marketCap,
-      currency: item.currency || inferCurrency(item.symbol),
-      exchange: item.fullExchangeName || item.exchange,
-      marketState: item.marketState,
-      shortName: item.shortName,
-      source: "Yahoo Finance unofficial"
-    }));
-    if (items.length === symbols.length) {
-      return items;
+    if (response.ok) {
+      const payload = await response.json();
+      v7Items = (payload.quoteResponse?.result || []).map((item) => normalizeQuote({
+        symbol: item.symbol,
+        price: item.regularMarketPrice,
+        change: item.regularMarketChange,
+        changePercent: item.regularMarketChangePercent,
+        open: item.regularMarketOpen,
+        high: item.regularMarketDayHigh,
+        low: item.regularMarketDayLow,
+        previousClose: item.regularMarketPreviousClose,
+        volume: item.regularMarketVolume,
+        marketCap: item.marketCap,
+        currency: item.currency || inferCurrency(item.symbol),
+        exchange: item.fullExchangeName || item.exchange,
+        marketState: item.marketState,
+        shortName: item.shortName,
+        source: "Yahoo Finance unofficial"
+      }));
     }
   } catch {
-    // Fall back to the chart endpoint when quote is blocked.
+    // v7 blocked or unavailable, will chart-fallback below
   }
-  return getYahooChartQuotes(symbols);
+  if (v7Items.length > 0) {
+    const covered = new Set(v7Items.map((item) => item.symbol));
+    const missing = symbols.filter((s) => !covered.has(s)).slice(0, CHART_FALLBACK_LIMIT);
+    if (missing.length === 0) return v7Items;
+    const fallback = await getYahooChartQuotes(missing);
+    return [...v7Items, ...fallback];
+  }
+  return getYahooChartQuotes(symbols.slice(0, CHART_FALLBACK_LIMIT));
 }
 
 async function getYahooChartQuotes(symbols) {
   const items = [];
   for (let index = 0; index < symbols.length; index += CHART_QUOTE_CONCURRENCY) {
     const batch = symbols.slice(index, index + CHART_QUOTE_CONCURRENCY);
-    items.push(...await Promise.all(batch.map((symbol) => getYahooChartQuote(symbol))));
+    const results = await Promise.all(batch.map((symbol) => getYahooChartQuote(symbol)));
+    items.push(...results.filter(Boolean));
   }
   return items;
 }
 
 async function getYahooChartQuote(symbol) {
-  const endpoint = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
-  endpoint.searchParams.set("range", "1d");
-  endpoint.searchParams.set("interval", "5m");
-  endpoint.searchParams.set("includePrePost", "true");
-  const response = await fetch(endpoint, { headers: { "User-Agent": "Mozilla/5.0" } });
-  if (!response.ok) {
-    throw new Error(`Yahoo chart fallback returned ${response.status} for ${symbol}`);
+  try {
+    const endpoint = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
+    endpoint.searchParams.set("range", "1d");
+    endpoint.searchParams.set("interval", "5m");
+    endpoint.searchParams.set("includePrePost", "true");
+    const response = await fetch(endpoint, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return normalizeChartQuote(symbol, payload.chart?.result?.[0]);
+  } catch {
+    return null;
   }
-  const payload = await response.json();
-  return normalizeChartQuote(symbol, payload.chart?.result?.[0]);
 }
 
 function normalizeChartQuote(symbol, result) {
