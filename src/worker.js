@@ -136,7 +136,7 @@ function summarizeQuotePayload(provider, items) {
   return { provider, sourceSummary: sourceSet.join(" + ") || provider, items };
 }
 
-const CHART_FALLBACK_LIMIT = 30;
+const CHART_FALLBACK_LIMIT = 45;
 
 async function getYahooQuotes(symbols) {
   const endpoint = new URL("https://query1.finance.yahoo.com/v7/finance/quote");
@@ -167,14 +167,13 @@ async function getYahooQuotes(symbols) {
   } catch {
     // v7 blocked or unavailable, will chart-fallback below
   }
-  if (v7Items.length > 0) {
-    const covered = new Set(v7Items.map((item) => item.symbol));
-    const missing = symbols.filter((s) => !covered.has(s)).slice(0, CHART_FALLBACK_LIMIT);
-    if (missing.length === 0) return v7Items;
-    const fallback = await getYahooChartQuotes(missing);
-    return [...v7Items, ...fallback];
-  }
-  return getYahooChartQuotes(symbols.slice(0, CHART_FALLBACK_LIMIT));
+  const covered = new Set(v7Items.map((item) => item.symbol));
+  const missing = symbols.filter((s) => !covered.has(s));
+  if (missing.length === 0) return v7Items;
+  // Prioritize DEFAULT_SYMBOLS so the most critical quotes always load first
+  const prioritized = [...new Set([...DEFAULT_SYMBOLS.filter((s) => missing.includes(s)), ...missing])].slice(0, CHART_FALLBACK_LIMIT);
+  const fallback = await getYahooChartQuotes(prioritized);
+  return [...v7Items, ...fallback];
 }
 
 async function getYahooChartQuotes(symbols) {
