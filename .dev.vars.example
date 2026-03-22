@@ -1,0 +1,4 @@
+QUOTE_PROVIDER=yahoo
+FINNHUB_API_KEY=
+TWELVEDATA_API_KEY=
+SEC_USER_AGENT=BoersenTerminalPrototype/0.1 hello@example.com
