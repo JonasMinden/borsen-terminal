@@ -136,44 +136,54 @@ function summarizeQuotePayload(provider, items) {
   return { provider, sourceSummary: sourceSet.join(" + ") || provider, items };
 }
 
-const CHART_FALLBACK_LIMIT = 45;
+const V7_BATCH_SIZE = 50;
+const CHART_FALLBACK_LIMIT = 40;
 
 async function getYahooQuotes(symbols) {
-  const endpoint = new URL("https://query1.finance.yahoo.com/v7/finance/quote");
-  endpoint.searchParams.set("symbols", symbols.join(","));
-  let v7Items = [];
-  try {
-    const response = await fetch(endpoint, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (response.ok) {
-      const payload = await response.json();
-      v7Items = (payload.quoteResponse?.result || []).map((item) => normalizeQuote({
-        symbol: item.symbol,
-        price: item.regularMarketPrice,
-        change: item.regularMarketChange,
-        changePercent: item.regularMarketChangePercent,
-        open: item.regularMarketOpen,
-        high: item.regularMarketDayHigh,
-        low: item.regularMarketDayLow,
-        previousClose: item.regularMarketPreviousClose,
-        volume: item.regularMarketVolume,
-        marketCap: item.marketCap,
-        currency: item.currency || inferCurrency(item.symbol),
-        exchange: item.fullExchangeName || item.exchange,
-        marketState: item.marketState,
-        shortName: item.shortName,
-        source: "Yahoo Finance unofficial"
-      }));
-    }
-  } catch {
-    // v7 blocked or unavailable, will chart-fallback below
+  // Split into parallel v7 batches of 50 — covers all symbols with ~4 requests
+  const batches = [];
+  for (let i = 0; i < symbols.length; i += V7_BATCH_SIZE) {
+    batches.push(symbols.slice(i, i + V7_BATCH_SIZE));
   }
+  const batchResults = await Promise.all(batches.map((batch) => fetchV7Batch(batch)));
+  const v7Items = batchResults.flat();
+
   const covered = new Set(v7Items.map((item) => item.symbol));
   const missing = symbols.filter((s) => !covered.has(s));
   if (missing.length === 0) return v7Items;
-  // Prioritize DEFAULT_SYMBOLS so the most critical quotes always load first
+  // Chart fallback only for symbols v7 missed — DEFAULT_SYMBOLS first
   const prioritized = [...new Set([...DEFAULT_SYMBOLS.filter((s) => missing.includes(s)), ...missing])].slice(0, CHART_FALLBACK_LIMIT);
   const fallback = await getYahooChartQuotes(prioritized);
   return [...v7Items, ...fallback];
+}
+
+async function fetchV7Batch(symbols) {
+  try {
+    const endpoint = new URL("https://query1.finance.yahoo.com/v7/finance/quote");
+    endpoint.searchParams.set("symbols", symbols.join(","));
+    const response = await fetch(endpoint, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return (payload.quoteResponse?.result || []).map((item) => normalizeQuote({
+      symbol: item.symbol,
+      price: item.regularMarketPrice,
+      change: item.regularMarketChange,
+      changePercent: item.regularMarketChangePercent,
+      open: item.regularMarketOpen,
+      high: item.regularMarketDayHigh,
+      low: item.regularMarketDayLow,
+      previousClose: item.regularMarketPreviousClose,
+      volume: item.regularMarketVolume,
+      marketCap: item.marketCap,
+      currency: item.currency || inferCurrency(item.symbol),
+      exchange: item.fullExchangeName || item.exchange,
+      marketState: item.marketState,
+      shortName: item.shortName,
+      source: "Yahoo Finance unofficial"
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function getYahooChartQuotes(symbols) {

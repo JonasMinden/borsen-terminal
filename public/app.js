@@ -1115,8 +1115,10 @@ function normalizeFundamentalsPayload(payload) {
 
 function getMetricsForTab(catalog, tab, period) {
   const categoryMap = { overview: ["overview", "income", "cashflow", "balance"], income: ["income"], cashflow: ["cashflow"], balance: ["balance"], filings: [] };
+  // SEC has no monthly filings — fall back to quarterly for the metrics grid
+  const secPeriod = period === "month" ? "quarter" : period;
   return catalog.filter((metric) => categoryMap[tab]?.includes(metric.category)).map((metric) => {
-    const entry = (metric.entries || []).find((candidate) => candidate.periodType === period);
+    const entry = (metric.entries || []).find((candidate) => candidate.periodType === secPeriod);
     return entry ? { ...entry, label: metric.label, category: metric.category } : null;
   }).filter(Boolean);
 }
